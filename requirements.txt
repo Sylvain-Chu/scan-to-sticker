@@ -1,0 +1,3 @@
+treepoem>=3.4.1
+pillow>=10.4.0
+pyserial>=3.5

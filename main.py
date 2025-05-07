@@ -3,10 +3,14 @@ Scanne le NETUM → extrait l’ID Ubiqod → compose une étiquette PNG prête 
 """
 
 # ------------------------- LIBRAIRIES ----------------------------------------
-import sys, re, datetime, pathlib, logging, io
+import sys, re, datetime, pathlib, logging
 import serial, serial.tools.list_ports
 import treepoem
-from PIL import Image, ImageDraw, ImageFont
+import win32print, win32ui
+from PIL import Image, ImageDraw, ImageFont, ImageWin
+
+# ------------------------- CONFIG IMPRIMANTE --------------------------------------
+PRINTER_NAME = "Brother PT-P950NW" 
 
 # ------------------------- CONFIG SÉRIE --------------------------------------
 PORT        = None          # None = auto, ou "COM4" pour forcer
@@ -110,6 +114,31 @@ def autodetect_port() -> str:
         return ports[0].device
     raise RuntimeError("Plusieurs ports USB‑COM ; fixez PORT dans le script.")
 
+def send_to_printer(path: str):
+    """
+    Dépose le PNG `path` dans la file d'attente de la PT‑P950NW.
+    Imprime en mode RAW 300 dpi, sans redimensionner.
+    """
+    # --- ouvrir l'imprimante ---
+    hprinter = win32print.OpenPrinter(PRINTER_NAME)
+    try:
+        hdc = win32ui.CreateDC()
+        hdc.CreatePrinterDC(PRINTER_NAME)
+        # noir et blanc
+        bmp = Image.open(path).convert("1")
+        dib = ImageWin.Dib(bmp)
+
+        # --- spool ---
+        win32print.StartDocPrinter(hprinter, 1, ("label", None, "RAW"))
+        win32print.StartPagePrinter(hprinter)
+
+        dib.draw(hdc.GetHandleOutput(), (0, 0, bmp.width, bmp.height))
+
+        win32print.EndPagePrinter(hprinter)
+        win32print.EndDocPrinter(hprinter)
+    finally:
+        win32print.ClosePrinter(hprinter)
+
 # ------------------------- BOUCLE PRINCIPALE ---------------------------------
 def main() -> None:
     port = autodetect_port()
@@ -134,7 +163,8 @@ def main() -> None:
                     ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                     file = OUT_DIR / f"label_{PREFIX}{uid}_{ts}.png"
                     img.save(file, dpi=(300, 300))
-                    logging.info(f"✔ {PREFIX}{uid} → {file.name}")
+                    send_to_printer(str(file))
+                    logging.info(f"✔ {PREFIX}{uid} -> {file.name}")
     except KeyboardInterrupt:
         logging.info("\nArrêt demandé.")
     except Exception as exc:
